@@ -53,7 +53,7 @@ export default function App() {
 
   // Email & Guest Authentication State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authFormMode, setAuthFormMode] = useState<"login" | "register">("login");
+  const [authFormMode, setAuthFormMode] = useState<"login" | "register">("register");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authDisplayName, setAuthDisplayName] = useState("");
@@ -632,7 +632,7 @@ export default function App() {
               <button
                 onClick={() => {
                   resetAuthForm();
-                  setAuthFormMode("login");
+                  setAuthFormMode("register");
                   setIsAuthModalOpen(true);
                 }}
                 className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/30 flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all shadow-md shadow-indigo-900/10 active:scale-95 duration-100"
@@ -1062,20 +1062,6 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setAuthFormMode("login");
-                    setEmailAuthError(null);
-                  }}
-                  className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    authFormMode === "login"
-                      ? "bg-indigo-600 text-white shadow-md"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  Oturum Aç
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
                     setAuthFormMode("register");
                     setEmailAuthError(null);
                   }}
@@ -1086,6 +1072,20 @@ export default function App() {
                   }`}
                 >
                   Kayıt Ol
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthFormMode("login");
+                    setEmailAuthError(null);
+                  }}
+                  className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    authFormMode === "login"
+                      ? "bg-indigo-600 text-white shadow-md"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  Oturum Aç
                 </button>
               </div>
 

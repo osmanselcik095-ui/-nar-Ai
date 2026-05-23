@@ -114,6 +114,36 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+// Helper to wrap raw 16-bit linear PCM with a standard RIFF-WAV header for full browser compatibility
+function pcmToWav(pcmBuffer: Buffer, sampleRate: number): Buffer {
+  const header = Buffer.alloc(44);
+  const blockAlign = 2; // 1 channel * 2 bytes per sample (16-bit)
+  const byteRate = sampleRate * blockAlign;
+  const pcmLength = pcmBuffer.length;
+  const fileLength = pcmLength + 36;
+
+  // RIFF chunk descriptor
+  header.write("RIFF", 0);
+  header.writeUInt32LE(fileLength, 4);
+  header.write("WAVE", 8);
+
+  // "fmt " sub-chunk
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16); // Subchunk1Size
+  header.writeUInt16LE(1, 20); // AudioFormat: 1 (PCM)
+  header.writeUInt16LE(1, 22); // NumChannels: 1 (Mono)
+  header.writeUInt32LE(sampleRate, 24); // SampleRate
+  header.writeUInt32LE(byteRate, 28); // ByteRate
+  header.writeUInt16LE(blockAlign, 32); // BlockAlign
+  header.writeUInt16LE(16, 34); // BitsPerSample: 16-bit
+
+  // "data" sub-chunk
+  header.write("data", 36);
+  header.writeUInt32LE(pcmLength, 40); // Subchunk2Size
+
+  return Buffer.concat([header, pcmBuffer]);
+}
+
 // 2. TEXT-TO-SPEECH VOICE API ENDPOINT
 app.post("/api/tts", async (req, res) => {
   const { text } = req.body;
@@ -139,11 +169,29 @@ app.post("/api/tts", async (req, res) => {
     });
 
     const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-    const base64Audio = inlineData?.data;
-    const mimeType = inlineData?.mimeType || "audio/aac";
+    let base64Audio = inlineData?.data;
+    let mimeType = inlineData?.mimeType || "audio/aac";
 
     if (!base64Audio) {
       throw new Error("Ses verisi üretilemedi.");
+    }
+
+    // Convert raw PCM to browser-playable WAV if needed
+    const isPcm = mimeType.toLowerCase().includes("pcm") || mimeType.toLowerCase().includes("raw") || mimeType.toLowerCase().includes("linear16") || mimeType.toLowerCase().includes("audio/x-linear16");
+    if (isPcm) {
+      let sampleRate = 24000;
+      const rateMatch = mimeType.match(/rate=(\d+)/i);
+      if (rateMatch) {
+        sampleRate = parseInt(rateMatch[1], 10);
+      }
+      try {
+        const rawPcmBuffer = Buffer.from(base64Audio, "base64");
+        const wavBuffer = pcmToWav(rawPcmBuffer, sampleRate);
+        base64Audio = wavBuffer.toString("base64");
+        mimeType = "audio/wav";
+      } catch (wavErr) {
+        console.error("Failed to convert raw PCM to WAV container:", wavErr);
+      }
     }
 
     return res.json({ audio: base64Audio, mimeType });
