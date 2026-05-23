@@ -5,7 +5,10 @@ import {
   initAuth, 
   googleSignIn, 
   googleSignOut, 
-  getAccessToken 
+  getAccessToken,
+  registerWithEmail,
+  loginWithEmail,
+  loginAsGuest
 } from "./firebase";
 import { User } from "firebase/auth";
 import { 
@@ -27,7 +30,9 @@ import {
   XCircle,
   LogOut,
   ChevronRight,
-  Brain
+  Brain,
+  Lock,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Markdown from "react-markdown";
@@ -44,6 +49,16 @@ export default function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authWarning, setAuthWarning] = useState<string | null>(null);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState(false);
+
+  // Email & Guest Authentication State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authFormMode, setAuthFormMode] = useState<"login" | "register">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
+  const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
+  const [isEmailAuthLoading, setIsEmailAuthLoading] = useState(false);
 
   // Email Notification States
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null); // messageId or "session"
@@ -185,6 +200,7 @@ export default function App() {
   // 8. GOOGLE AUTHENTICATION CORE FLOWS
   const handleSignIn = async () => {
     setAuthWarning(null);
+    setUnauthorizedDomain(false);
     try {
       const result = await googleSignIn();
       if (result) {
@@ -193,7 +209,9 @@ export default function App() {
       }
     } catch (e: any) {
       console.error("Popup Auth failed:", e);
-      if (e.code === "auth/popup-closed-by-user" || e.message?.includes("popup-closed-by-user")) {
+      if (e.code === "auth/unauthorized-domain" || e.message?.includes("unauthorized-domain")) {
+        setUnauthorizedDomain(true);
+      } else if (e.code === "auth/popup-closed-by-user" || e.message?.includes("popup-closed-by-user")) {
         setAuthWarning(
           "Giriş penceresi kapatıldı. Oturum açmak için lütfen oturum aç butonuna tekrar tıklayın."
         );
@@ -212,6 +230,95 @@ export default function App() {
       setAccessToken(null);
       stopAudioPlayback();
     }
+  };
+
+  // 8.1 EMAIL REGISTER / LOGIN & GUEST SYSTEM
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword || !authDisplayName) {
+      setEmailAuthError("Lütfen tüm alanları doldurun.");
+      return;
+    }
+    if (authPassword.length < 6) {
+      setEmailAuthError("Şifre en az 6 karakter olmalıdır.");
+      return;
+    }
+    setEmailAuthError(null);
+    setIsEmailAuthLoading(true);
+    try {
+      const registeredUser = await registerWithEmail(authEmail, authPassword, authDisplayName);
+      setUser(registeredUser);
+      setIsAuthModalOpen(false);
+      resetAuthForm();
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === "auth/email-already-in-use" || err.message?.includes("email-already-in-use")) {
+        setEmailAuthError("Bu e-posta adresi zaten kullanımda.");
+      } else if (err.code === "auth/invalid-email" || err.message?.includes("invalid-email")) {
+        setEmailAuthError("Geçersiz e-posta biçimi.");
+      } else if (err.code === "auth/weak-password" || err.message?.includes("weak-password")) {
+        setEmailAuthError("Şifre çok zayıf. En az 6 karakter olmalıdır.");
+      } else {
+        setEmailAuthError(`Kayıt başarısız: ${err.message || err}`);
+      }
+    } finally {
+      setIsEmailAuthLoading(false);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) {
+      setEmailAuthError("Lütfen e-posta ve şifrenizi girin.");
+      return;
+    }
+    setEmailAuthError(null);
+    setIsEmailAuthLoading(true);
+    try {
+      const loggedInUser = await loginWithEmail(authEmail, authPassword);
+      setUser(loggedInUser);
+      setIsAuthModalOpen(false);
+      resetAuthForm();
+    } catch (err: any) {
+      console.error(err);
+      if (
+        err.code === "auth/user-not-found" || 
+        err.code === "auth/wrong-password" || 
+        err.code === "auth/invalid-credential" ||
+        err.message?.includes("user-not-found") ||
+        err.message?.includes("wrong-password") ||
+        err.message?.includes("invalid-credential")
+      ) {
+        setEmailAuthError("E-posta adresi veya şifre hatalı.");
+      } else {
+        setEmailAuthError(`Giriş başarısız: ${err.message || err}`);
+      }
+    } finally {
+      setIsEmailAuthLoading(false);
+    }
+  };
+
+  const handleGuestSignIn = async () => {
+    setEmailAuthError(null);
+    setIsEmailAuthLoading(true);
+    try {
+      const guestUser = await loginAsGuest();
+      setUser(guestUser);
+      setIsAuthModalOpen(false);
+      resetAuthForm();
+    } catch (err: any) {
+      console.error(err);
+      setEmailAuthError(`Misafir girişi başarısız: ${err.message || err}`);
+    } finally {
+      setIsEmailAuthLoading(false);
+    }
+  };
+
+  const resetAuthForm = () => {
+    setAuthEmail("");
+    setAuthPassword("");
+    setAuthDisplayName("");
+    setEmailAuthError(null);
   };
 
   // 9. CLIENT-SIDE WARNING-FREE EMAIL TRANSMISSION
@@ -510,7 +617,7 @@ export default function App() {
                 )}
                 <div className="hidden md:block text-left">
                   <p className="text-xs font-semibold text-white line-clamp-1 leading-snug">{user.displayName || "Kullanıcı"}</p>
-                  <p className="text-[9px] text-indigo-400 font-mono leading-none">{user.email}</p>
+                  <p className="text-[9px] text-indigo-400 font-mono leading-none">{user.email || "Misafir Modu"}</p>
                 </div>
                 <button
                   onClick={handleSignOut}
@@ -521,20 +628,17 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              /* Google Authentication Launch Button */
+              /* Authentication Launch Button */
               <button
-                onClick={handleSignIn}
-                className="gsi-material-button text-xs font-semibold bg-white text-gray-900 border border-gray-300 hover:bg-gray-50 flex items-center gap-2 px-3.5 py-1.5 rounded-xl cursor-pointer transition-colors shadow-sm active:scale-95 duration-100"
+                onClick={() => {
+                  resetAuthForm();
+                  setAuthFormMode("login");
+                  setIsAuthModalOpen(true);
+                }}
+                className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/30 flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all shadow-md shadow-indigo-900/10 active:scale-95 duration-100"
               >
-                <div className="gsi-material-button-icon flex items-center justify-center w-4 h-4">
-                  <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: "block" }}>
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-                  </svg>
-                </div>
-                <span>Google ile Oturum Aç</span>
+                <UserIcon className="w-3.5 h-3.5" />
+                <span>Oturum Aç / Kaydol</span>
               </button>
             )}
 
@@ -588,6 +692,56 @@ export default function App() {
               <button 
                 onClick={() => setAuthWarning(null)}
                 className="bg-red-950/20 text-red-300 hover:text-white text-xs px-2.5 py-1 rounded-lg border border-red-500/20 active:scale-95 ml-3 transition-all cursor-pointer"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Google Authentication Unauthorized Domain alert & steps */}
+        {unauthorizedDomain && (
+          <div className="m-4 p-5 bg-amber-950/20 border border-amber-500/30 rounded-2xl flex flex-col gap-4 animate-fade-in shadow-xl">
+            <div className="flex items-start gap-3.5">
+              <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-200/90 flex-1">
+                <span className="font-semibold block text-sm mb-1 text-white">Alan Adı Yetkilendirme Hatası (auth/unauthorized-domain)</span>
+                <p className="leading-relaxed mb-3 text-gray-300">
+                  Google ile giriş işleminin çalışabilmesi için mevcut sitenin adresini (alan adını) Firebase Console panelinde izinli listeye eklemeniz gerekmektedir. Firebase Projeniz: <strong className="text-white font-mono bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-500/20">primordial-canyon-xpnh2</strong>
+                </p>
+                <div className="bg-[#0c1221] border border-[#1e293b] p-4 rounded-xl text-gray-400 space-y-2 text-xs">
+                  <p className="font-semibold text-amber-400">🛠️ Firebase Console&apos;da Yetkilendirme Adımları:</p>
+                  <ol className="list-decimal pl-4 space-y-1.5 text-gray-400">
+                    <li>
+                      <a 
+                        href="https://console.firebase.google.com/project/primordial-canyon-xpnh2/authentication/providers" 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="text-indigo-400 hover:underline inline-flex items-center gap-1 font-semibold"
+                      >
+                        Firebase Authentication Ayarlarını Açın <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </li>
+                    <li>Sırasıyla üstteki <strong>&quot;Settings&quot;</strong> sekmesine ve sol alt menüden <strong>&quot;Authorized domains&quot;</strong> seçeneğine tıklayın.</li>
+                    <li><strong>&quot;Add domain&quot;</strong> butonuna basın ve şu anki alan adını aynen yapıştırın:
+                      <div className="flex items-center gap-2 mt-1 px-3 py-1.5 bg-[#141b2e] border border-[#1e293b] rounded-lg text-white font-mono select-all">
+                        <span>{window.location.hostname}</span>
+                      </div>
+                    </li>
+                    <li>Ortak paylaşım linkini de eklemek isterseniz, bu adresi de listenize ekleyin:
+                      <div className="flex items-center gap-3 mt-1 px-3 py-1.5 bg-[#141b2e] border border-[#1e293b] rounded-lg text-white/70 font-mono select-all">
+                        <span>ais-pre-zi6syvz73fevcuto2iem25-423342617541.europe-west2.run.app</span>
+                      </div>
+                    </li>
+                    <li>Değişiklikleri kaydedin (Save) ve bu sayfayı yenileyip tekrar giriş yapmayı deneyin!</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button 
+                onClick={() => setUnauthorizedDomain(false)}
+                className="bg-gray-800 hover:bg-gray-700 text-white text-xs px-4 py-2 rounded-xl border border-gray-600 active:scale-95 transition-all cursor-pointer"
               >
                 Kapat
               </button>
@@ -863,6 +1017,195 @@ export default function App() {
         </footer>
 
       </div>
+
+      {/* Authentication Modal Dialog Layer */}
+      <AnimatePresence>
+        {isAuthModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Modal Backdrop overlay overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAuthModalOpen(false)}
+              className="absolute inset-0 bg-[#02050a]/85 backdrop-blur-md animate-fade-in"
+            ></motion.div>
+
+            {/* Modal Window Container */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[#1e293b] bg-[#0c1221] p-6 shadow-2xl z-10"
+            >
+              {/* Close Button element */}
+              <button
+                onClick={() => setIsAuthModalOpen(false)}
+                className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-white hover:bg-slate-800/40 rounded-lg transition-all cursor-pointer"
+                title="Kapat"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* Branding Header Area */}
+              <div className="text-center mb-5 mt-2">
+                <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-indigo-400 mb-2.5 animate-pulse">
+                  <Brain className="w-5.5 h-5.5" />
+                </div>
+                <h3 className="text-base font-semibold text-white">Çınar AI Bilgi Portalı</h3>
+                <p className="text-[11px] text-gray-400 mt-1">Giriş yönteminizi seçin veya hesap oluşturun</p>
+              </div>
+
+              {/* Form Option Tabs */}
+              <div className="grid grid-cols-2 gap-1 p-1 bg-[#141b2e] rounded-xl mb-4 border border-[#1e293b]/50">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthFormMode("login");
+                    setEmailAuthError(null);
+                  }}
+                  className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    authFormMode === "login"
+                      ? "bg-indigo-600 text-white shadow-md"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  Oturum Aç
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthFormMode("register");
+                    setEmailAuthError(null);
+                  }}
+                  className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    authFormMode === "register"
+                      ? "bg-indigo-600 text-white shadow-md"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  Kayıt Ol
+                </button>
+              </div>
+
+              {/* Form Fields Error display */}
+              {emailAuthError && (
+                <div className="p-3 mb-4 bg-red-950/25 border border-red-500/20 rounded-xl text-[11px] text-red-300 flex items-start gap-2 animate-fade-in shadow-inner">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <span className="flex-1 leading-normal">{emailAuthError}</span>
+                </div>
+              )}
+
+              {/* Form container body */}
+              <form onSubmit={authFormMode === "login" ? handleEmailLogin : handleEmailRegister} className="space-y-3.5">
+                {authFormMode === "register" && (
+                  <div>
+                    <label className="block text-[10px] uppercase font-mono tracking-wider text-gray-400 mb-1">Ad Soyad</label>
+                    <div className="relative flex items-center">
+                      <UserIcon className="absolute left-3 w-4 h-4 text-gray-500" />
+                      <input
+                        type="text"
+                        value={authDisplayName}
+                        onChange={(e) => setAuthDisplayName(e.target.value)}
+                        placeholder="Örn: Osman Selçik"
+                        className="w-full pl-9 pr-4 py-2 bg-[#080c14] border border-[#1e293b] rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500/50 transition-all select-text"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] uppercase font-mono tracking-wider text-gray-400 mb-1">E-posta Adresi</label>
+                  <div className="relative flex items-center">
+                    <Mail className="absolute left-3 w-4 h-4 text-gray-500" />
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="adiniz@ornek.com"
+                      className="w-full pl-9 pr-4 py-2 bg-[#080c14] border border-[#1e293b] rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500/50 transition-all select-text"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-mono tracking-wider text-gray-400 mb-1">Şifre</label>
+                  <div className="relative flex items-center">
+                    <Lock className="absolute left-3 w-4 h-4 text-gray-500" />
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="En az 6 karakter"
+                      className="w-full pl-9 pr-4 py-2 bg-[#080c14] border border-[#1e293b] rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500/50 transition-all select-text"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isEmailAuthLoading}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl cursor-pointer active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5 shadow-md shadow-indigo-950/30"
+                >
+                  {isEmailAuthLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>İşlem gerçekleştiriliyor...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{authFormMode === "login" ? "Giriş Yap" : "Hesap Oluştur"}</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Social divider */}
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-[1px] bg-[#1e293b]"></div>
+                <span className="text-[10px] text-gray-500 font-mono select-none">VEYA</span>
+                <div className="flex-1 h-[1px] bg-[#1e293b]"></div>
+              </div>
+
+              {/* External authentication / Guest */}
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  onClick={handleSignIn}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-900 border border-gray-300 rounded-xl text-xs font-semibold cursor-pointer active:scale-[0.98] transition-all"
+                >
+                  <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4 flex-shrink-0 select-none">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                  </svg>
+                  <span>Google ile Oturum Aç</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleGuestSignIn}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2 bg-[#141b2e] hover:bg-[#1b253f] text-gray-300 hover:text-white border border-[#1e293b]/70 rounded-xl text-xs font-semibold cursor-pointer active:scale-[0.98] transition-all"
+                >
+                  <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Misafir Olarak Devam Et</span>
+                </button>
+              </div>
+
+              <div className="mt-4 text-center">
+                <p className="text-[10px] text-gray-500">
+                  Şifreniz ve verileriniz gizlilikle korunur.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
