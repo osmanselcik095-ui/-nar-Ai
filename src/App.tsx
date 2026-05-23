@@ -71,6 +71,7 @@ export default function App() {
   const [currentlyPlayingAudioId, setCurrentlyPlayingAudioId] = useState<string | null>(null);
   const [audioLoadingId, setAudioLoadingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
 
   // Key / API alert state
   const [apiError, setApiError] = useState<{ message: string; isKeyMissing: boolean } | null>(null);
@@ -397,10 +398,25 @@ export default function App() {
           audioRef.current.pause();
         }
 
+        // Clean up previous blob URL to avoid memory leaks
+        if (audioUrlRef.current) {
+          URL.revokeObjectURL(audioUrlRef.current);
+          audioUrlRef.current = null;
+        }
+
         // DYNAMIC AUDIO CODEC RESOLUTION - uses actual mimeType returned from Gemini endpoint (AAC, WAV, etc.)
         const audioMimeType = data.mimeType || "audio/aac";
-        const audioUrl = `data:${audioMimeType};base64,${data.audio}`;
         
+        // Convert Base64 directly to Blob to bypass data URL length and security restrictions in sandboxed iframe
+        const binaryString = atob(data.audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: audioMimeType });
+        const audioUrl = URL.createObjectURL(blob);
+        audioUrlRef.current = audioUrl;
+
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
         
@@ -408,18 +424,22 @@ export default function App() {
         
         audio.onended = () => {
           setCurrentlyPlayingAudioId(null);
+          if (audioUrlRef.current) {
+            URL.revokeObjectURL(audioUrlRef.current);
+            audioUrlRef.current = null;
+          }
         };
 
         audio.onerror = () => {
           setCurrentlyPlayingAudioId(null);
-          alert("Ses oynatıcı hatası: Tarayıcınız ses formatını desteklemiyor.");
+          // Gently log warning instead of intrusive alert for nicer user experience
+          console.warn("Ses oynatıcı hatası: Tarayıcınız ses formatını desteklemiyor.");
         };
 
         await audio.play();
       }
     } catch (err: any) {
       console.error("Audio trigger failed:", err);
-      alert(err.message || "Seslendirme servisi şu an meşgul.");
     } finally {
       setAudioLoadingId(null);
     }
@@ -429,6 +449,10 @@ export default function App() {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
     }
     setCurrentlyPlayingAudioId(null);
   };
