@@ -1108,7 +1108,7 @@ export default function App() {
                         type="text"
                         value={authDisplayName}
                         onChange={(e) => setAuthDisplayName(e.target.value)}
-                        placeholder="Örn: Osman Selçik"
+                        placeholder="Örn: Ahmet Yılmaz"
                         className="w-full pl-9 pr-4 py-2 bg-[#080c14] border border-[#1e293b] rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500/50 transition-all select-text"
                         required
                       />
