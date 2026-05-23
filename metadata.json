@@ -1,0 +1,6 @@
+{
+  "name": "Çınar AI",
+  "description": "Bilgelik, derin bilgi birikimi ve samimiyetle güçlendirilmiş, her konuda size rehberlik eden güvenilir yapay zekâ asistanınız.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
