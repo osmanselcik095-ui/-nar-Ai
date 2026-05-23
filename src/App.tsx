@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Sidebar from "./components/Sidebar";
+import { Turnstile } from "./components/Turnstile";
 import { Message, ChatSession } from "./types";
 import { 
   initAuth, 
@@ -59,6 +60,7 @@ export default function App() {
   const [authDisplayName, setAuthDisplayName] = useState("");
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
   const [isEmailAuthLoading, setIsEmailAuthLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   // Email Notification States
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null); // messageId or "session"
@@ -244,6 +246,10 @@ export default function App() {
       setEmailAuthError("Şifre en az 6 karakter olmalıdır.");
       return;
     }
+    if (!turnstileToken) {
+      setEmailAuthError("Lütfen güvenlik doğrulamasını (Cloudflare Turnstile) tamamlayın.");
+      return;
+    }
     setEmailAuthError(null);
     setIsEmailAuthLoading(true);
     try {
@@ -271,6 +277,10 @@ export default function App() {
     e.preventDefault();
     if (!authEmail || !authPassword) {
       setEmailAuthError("Lütfen e-posta ve şifrenizi girin.");
+      return;
+    }
+    if (!turnstileToken) {
+      setEmailAuthError("Lütfen güvenlik doğrulamasını (Cloudflare Turnstile) tamamlayın.");
       return;
     }
     setEmailAuthError(null);
@@ -320,6 +330,7 @@ export default function App() {
     setAuthPassword("");
     setAuthDisplayName("");
     setEmailAuthError(null);
+    setTurnstileToken(null);
   };
 
   // 9. CLIENT-SIDE WARNING-FREE EMAIL TRANSMISSION
@@ -1088,6 +1099,7 @@ export default function App() {
                   onClick={() => {
                     setAuthFormMode("register");
                     setEmailAuthError(null);
+                    setTurnstileToken(null);
                   }}
                   className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                     authFormMode === "register"
@@ -1102,6 +1114,7 @@ export default function App() {
                   onClick={() => {
                     setAuthFormMode("login");
                     setEmailAuthError(null);
+                    setTurnstileToken(null);
                   }}
                   className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                     authFormMode === "login"
@@ -1169,6 +1182,9 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                {/* Cloudflare Turnstile human verification */}
+                <Turnstile onVerify={setTurnstileToken} key={authFormMode} theme="dark" />
 
                 <button
                   type="submit"
